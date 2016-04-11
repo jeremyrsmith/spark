@@ -419,34 +419,33 @@ private[sql] class JDBCRDD(
               }
               mutableRow.setLong(i, ans)
             case ArrayConversion(elementConversion) =>
-              val array = rs.getArray(pos).getArray
-              if (array != null) {
-                val data = elementConversion match {
-                  case TimestampConversion =>
-                    array.asInstanceOf[Array[java.sql.Timestamp]].map { timestamp =>
-                      nullSafeConvert(timestamp, DateTimeUtils.fromJavaTimestamp)
-                    }
-                  case StringConversion =>
-                    array.asInstanceOf[Array[java.lang.String]]
-                      .map(UTF8String.fromString)
-                  case DateConversion =>
-                    array.asInstanceOf[Array[java.sql.Date]].map { date =>
-                      nullSafeConvert(date, DateTimeUtils.fromJavaDate)
-                    }
-                  case DecimalConversion(p, s) =>
-                    array.asInstanceOf[Array[java.math.BigDecimal]].map { decimal =>
-                      nullSafeConvert[java.math.BigDecimal](decimal, d => Decimal(d, p, s))
-                    }
-                  case BinaryLongConversion =>
-                    throw new IllegalArgumentException(s"Unsupported array element conversion $i")
-                  case _: ArrayConversion =>
-                    throw new IllegalArgumentException("Nested arrays unsupported")
-                  case _ => array.asInstanceOf[Array[Any]]
-                }
-                mutableRow.update(i, new GenericArrayData(data))
-              } else {
-                mutableRow.update(i, null)
+              val arrayData : Option[Array[Any]] = for {
+                wrapped <- Option(rs.getArray(pos))
+                array <- Option(wrapped.getArray)
+              } yield elementConversion match {
+                case TimestampConversion =>
+                  array.asInstanceOf[Array[java.sql.Timestamp]].map { timestamp =>
+                    nullSafeConvert(timestamp, DateTimeUtils.fromJavaTimestamp)
+                  }
+                case StringConversion =>
+                  array.asInstanceOf[Array[java.lang.String]]
+                    .map(UTF8String.fromString)
+                case DateConversion =>
+                  array.asInstanceOf[Array[java.sql.Date]].map { date =>
+                    nullSafeConvert(date, DateTimeUtils.fromJavaDate)
+                  }
+                case DecimalConversion(p, s) =>
+                  array.asInstanceOf[Array[java.math.BigDecimal]].map { decimal =>
+                    nullSafeConvert[java.math.BigDecimal](decimal, d => Decimal(d, p, s))
+                  }
+                case BinaryLongConversion =>
+                  throw new IllegalArgumentException(s"Unsupported array element conversion $i")
+                case _: ArrayConversion =>
+                  throw new IllegalArgumentException("Nested arrays unsupported")
+                case _ => array.asInstanceOf[Array[Any]]
               }
+
+              mutableRow.update(i, arrayData.orNull)
           }
           if (rs.wasNull) mutableRow.setNullAt(i)
           i = i + 1
